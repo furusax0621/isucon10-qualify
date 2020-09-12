@@ -456,6 +456,8 @@ func postChair(c echo.Context) error {
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
+	c.Logger().Debugf("post chair count: %d", len(records))
+
 	tx, err := chairDB.Begin()
 	if err != nil {
 		c.Logger().Errorf("failed to begin tx: %v", err)
@@ -771,6 +773,7 @@ func postEstate(c echo.Context) error {
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
+	c.Logger().Debugf("post estate count: %d", len(records))
 	recordsChan <- records
 
 	return c.NoContent(http.StatusCreated)

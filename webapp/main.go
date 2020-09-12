@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,7 +20,6 @@ import (
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
 	"github.com/labstack/gommon/log"
-	"golang.org/x/sync/errgroup"
 )
 
 const Limit = 20
@@ -258,41 +256,10 @@ func init() {
 	json.Unmarshal(jsonText, &estateSearchCondition)
 }
 
-var recordsChan chan []Estate
-
 func main() {
 	// pprof
 	go func() {
 		fmt.Println(http.ListenAndServe("0.0.0.0:6060", nil))
-	}()
-
-	recordsChan := make(chan []Estate, 5)
-	defer close(recordsChan)
-	go func() {
-		for {
-			records := <-recordsChan
-
-			func() {
-				tx, err := estateDB.Begin()
-				if err != nil {
-					log.Errorf("failed to begin tx: %v", err)
-					return
-				}
-				defer tx.Rollback()
-
-				for _, r := range records {
-					_, err := tx.Exec("INSERT INTO estate(id, name, description, thumbnail, address, latitude, longitude, rent, door_height, door_width, features, popularity) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", r.ID, r.Name, r.Description, r.Thumbnail, r.Address, r.Latitude, r.Longitude, r.Rent, r.DoorHeight, r.DoorWidth, r.Features, r.Popularity)
-					if err != nil {
-						log.Errorf("failed to insert estate: %v", err)
-						return
-					}
-				}
-				if err := tx.Commit(); err != nil {
-					log.Errorf("failed to commit tx: %v", err)
-					return
-				}
-			}()
-		}
 	}()
 
 	// Echo instance
@@ -333,14 +300,14 @@ func main() {
 	if err != nil {
 		e.Logger.Fatalf("Chair DB connection failed : %v", err)
 	}
-	chairDB.SetMaxOpenConns(100)
+	chairDB.SetMaxOpenConns(10)
 	defer chairDB.Close()
 
 	estateDB, err = mySQLConnectionDataEstate.ConnectDB()
 	if err != nil {
 		e.Logger.Fatalf("Estate DB connection failed : %v", err)
 	}
-	estateDB.SetMaxOpenConns(100)
+	estateDB.SetMaxOpenConns(10)
 	defer estateDB.Close()
 
 	// Start server
@@ -441,8 +408,6 @@ func postChair(c echo.Context) error {
 		c.Logger().Errorf("failed to read csv: %v", err)
 		return c.NoContent(http.StatusInternalServerError)
 	}
-
-	c.Logger().Debugf("post chair count: %d", len(records))
 
 	tx, err := chairDB.Begin()
 	if err != nil {
@@ -759,36 +724,40 @@ func postEstate(c echo.Context) error {
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
-	c.Logger().Debugf("post estate count: %d", len(records))
-	estates := make([]Estate, 0, len(records))
+	tx, err := estateDB.Begin()
+	if err != nil {
+		c.Logger().Errorf("failed to begin tx: %v", err)
+		return c.NoContent(http.StatusInternalServerError)
+	}
+	defer tx.Rollback()
 	for _, row := range records {
-		var estate Estate
 		rm := RecordMapper{Record: row}
-		estate.ID = int64(rm.NextInt())
-		estate.Name = rm.NextString()
-		estate.Description = rm.NextString()
-		estate.Thumbnail = rm.NextString()
-		estate.Address = rm.NextString()
-		estate.Latitude = rm.NextFloat()
-		estate.Longitude = rm.NextFloat()
-		estate.Rent = int64(rm.NextInt())
-		estate.DoorHeight = int64(rm.NextInt())
-		estate.DoorWidth = int64(rm.NextInt())
-		estate.Features = rm.NextString()
-		estate.Popularity = int64(rm.NextInt())
+		id := rm.NextInt()
+		name := rm.NextString()
+		description := rm.NextString()
+		thumbnail := rm.NextString()
+		address := rm.NextString()
+		latitude := rm.NextFloat()
+		longitude := rm.NextFloat()
+		rent := rm.NextInt()
+		doorHeight := rm.NextInt()
+		doorWidth := rm.NextInt()
+		features := rm.NextString()
+		popularity := rm.NextInt()
 		if err := rm.Err(); err != nil {
 			c.Logger().Errorf("failed to read record: %v", err)
 			return c.NoContent(http.StatusBadRequest)
 		}
-		estates = append(estates, estate)
+		_, err := tx.Exec("INSERT INTO estate(id, name, description, thumbnail, address, latitude, longitude, rent, door_height, door_width, features, popularity) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", id, name, description, thumbnail, address, latitude, longitude, rent, doorHeight, doorWidth, features, popularity)
+		if err != nil {
+			c.Logger().Errorf("failed to insert estate: %v", err)
+			return c.NoContent(http.StatusInternalServerError)
+		}
 	}
-
-	for _, e := range estates {
-		estateCashe.Store(e.ID, e)
+	if err := tx.Commit(); err != nil {
+		c.Logger().Errorf("failed to commit tx: %v", err)
+		return c.NoContent(http.StatusInternalServerError)
 	}
-
-	recordsChan <- estates
-
 	return c.NoContent(http.StatusCreated)
 }
 
@@ -976,45 +945,23 @@ func searchEstateNazotte(c echo.Context) error {
 	}
 
 	estatesInPolygon := []Estate{}
-	ch := make(chan struct{}, 100)
-	var eg errgroup.Group
 	for _, estate := range estatesInBoundingBox {
-		estate := estate
-		eg.Go(func() error {
-			ch <- struct{}{}
-			defer func() {
-				<-ch
-			}()
+		validatedEstate := Estate{}
 
-			validatedEstate := Estate{}
-
-			point := fmt.Sprintf("'POINT(%f %f)'", estate.Latitude, estate.Longitude)
-			query := fmt.Sprintf(`SELECT * FROM estate WHERE id = ? AND ST_Contains(ST_PolygonFromText(%s), ST_GeomFromText(%s))`, coordinates.coordinatesToText(), point)
-			err = estateDB.Get(&validatedEstate, query, estate.ID)
-			if err != nil {
-				if err == sql.ErrNoRows {
-					return nil
-				} else {
-					c.Echo().Logger.Errorf("estateDB access is failed on executing validate if estate is in polygon : %v", err)
-					return err
-				}
+		point := fmt.Sprintf("'POINT(%f %f)'", estate.Latitude, estate.Longitude)
+		query := fmt.Sprintf(`SELECT * FROM estate WHERE id = ? AND ST_Contains(ST_PolygonFromText(%s), ST_GeomFromText(%s))`, coordinates.coordinatesToText(), point)
+		err = estateDB.Get(&validatedEstate, query, estate.ID)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				continue
+			} else {
+				c.Echo().Logger.Errorf("estateDB access is failed on executing validate if estate is in polygon : %v", err)
+				return c.NoContent(http.StatusInternalServerError)
 			}
-
+		} else {
 			estatesInPolygon = append(estatesInPolygon, validatedEstate)
-
-			return nil
-		})
-	}
-	if err := eg.Wait(); err != nil {
-		return c.NoContent(http.StatusInternalServerError)
-	}
-
-	sort.Slice(estatesInPolygon, func(i, j int) bool {
-		if estatesInPolygon[i].Popularity == estatesInPolygon[j].Popularity {
-			return estatesInPolygon[i].ID < estatesInPolygon[j].ID
 		}
-		return estatesInPolygon[i].Popularity > estatesInPolygon[j].Popularity
-	})
+	}
 
 	var re EstateSearchResponse
 	re.Estates = []Estate{}

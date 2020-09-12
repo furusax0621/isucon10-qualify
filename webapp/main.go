@@ -20,6 +20,7 @@ import (
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
 	"github.com/labstack/gommon/log"
+	"golang.org/x/sync/errgroup"
 )
 
 const Limit = 20
@@ -299,14 +300,14 @@ func main() {
 	if err != nil {
 		e.Logger.Fatalf("Chair DB connection failed : %v", err)
 	}
-	chairDB.SetMaxOpenConns(10)
+	chairDB.SetMaxOpenConns(100)
 	defer chairDB.Close()
 
 	estateDB, err = mySQLConnectionDataEstate.ConnectDB()
 	if err != nil {
 		e.Logger.Fatalf("Estate DB connection failed : %v", err)
 	}
-	estateDB.SetMaxOpenConns(10)
+	estateDB.SetMaxOpenConns(100)
 	defer estateDB.Close()
 
 	// Start server
@@ -934,22 +935,37 @@ func searchEstateNazotte(c echo.Context) error {
 	}
 
 	estatesInPolygon := []Estate{}
+	ch := make(chan struct{}, 100)
+	var eg errgroup.Group
 	for _, estate := range estatesInBoundingBox {
-		validatedEstate := Estate{}
+		estate := estate
+		eg.Go(func() error {
+			ch <- struct{}{}
+			defer func() {
+				<-ch
+			}()
 
-		point := fmt.Sprintf("'POINT(%f %f)'", estate.Latitude, estate.Longitude)
-		query := fmt.Sprintf(`SELECT * FROM estate WHERE id = ? AND ST_Contains(ST_PolygonFromText(%s), ST_GeomFromText(%s))`, coordinates.coordinatesToText(), point)
-		err = estateDB.Get(&validatedEstate, query, estate.ID)
-		if err != nil {
-			if err == sql.ErrNoRows {
-				continue
-			} else {
-				c.Echo().Logger.Errorf("estateDB access is failed on executing validate if estate is in polygon : %v", err)
-				return c.NoContent(http.StatusInternalServerError)
+			validatedEstate := Estate{}
+
+			point := fmt.Sprintf("'POINT(%f %f)'", estate.Latitude, estate.Longitude)
+			query := fmt.Sprintf(`SELECT * FROM estate WHERE id = ? AND ST_Contains(ST_PolygonFromText(%s), ST_GeomFromText(%s))`, coordinates.coordinatesToText(), point)
+			err = estateDB.Get(&validatedEstate, query, estate.ID)
+			if err != nil {
+				if err == sql.ErrNoRows {
+					return nil
+				} else {
+					c.Echo().Logger.Errorf("estateDB access is failed on executing validate if estate is in polygon : %v", err)
+					return err
+				}
 			}
-		} else {
+
 			estatesInPolygon = append(estatesInPolygon, validatedEstate)
-		}
+
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return c.NoContent(http.StatusInternalServerError)
 	}
 
 	var re EstateSearchResponse

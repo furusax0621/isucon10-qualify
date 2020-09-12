@@ -366,7 +366,7 @@ func getChairDetail(c echo.Context) error {
 		return c.NoContent(http.StatusBadRequest)
 	}
 
-	if chair, ok := estateCashe.Load(id); ok {
+	if chair, ok := chairCashe.Load(id); ok {
 		chair = chair.(Chair)
 		return c.JSON(http.StatusOK, chair)
 	}

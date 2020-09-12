@@ -495,8 +495,6 @@ func searchChairs(c echo.Context) error {
 		return c.NoContent(http.StatusBadRequest)
 	}
 
-	conditions = append(conditions, "stock > 0")
-
 	page, err := strconv.Atoi(c.QueryParam("page"))
 	if err != nil {
 		c.Logger().Infof("Invalid format page parameter : %v", err)
@@ -564,7 +562,7 @@ func buyChair(c echo.Context) error {
 	defer tx.Rollback()
 
 	var chair Chair
-	err = tx.QueryRowx("SELECT * FROM chair WHERE id = ? AND stock > 0 FOR UPDATE", id).StructScan(&chair)
+	err = tx.QueryRowx("SELECT * FROM chair WHERE id = ? FOR UPDATE", id).StructScan(&chair)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			c.Echo().Logger.Infof("buyChair chair id \"%v\" not found", id)
@@ -574,10 +572,19 @@ func buyChair(c echo.Context) error {
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
-	_, err = tx.Exec("UPDATE chair SET stock = stock - 1 WHERE id = ?", id)
-	if err != nil {
-		c.Echo().Logger.Errorf("chair stock update failed : %v", err)
-		return c.NoContent(http.StatusInternalServerError)
+	stock := chair.Stock - 1
+	if stock > 0 {
+		_, err = tx.Exec("UPDATE chair SET ? WHERE id = ?", stock, id)
+		if err != nil {
+			c.Echo().Logger.Errorf("chair stock update failed : %v", err)
+			return c.NoContent(http.StatusInternalServerError)
+		}
+	} else {
+		_, err = tx.Exec("DELETE FROM chair WHERE id = ?", id)
+		if err != nil {
+			c.Echo().Logger.Errorf("chair delete failed : %v", err)
+			return c.NoContent(http.StatusInternalServerError)
+		}
 	}
 
 	err = tx.Commit()
@@ -595,7 +602,7 @@ func getChairSearchCondition(c echo.Context) error {
 
 func getLowPricedChair(c echo.Context) error {
 	var chairs []Chair
-	query := `SELECT * FROM chair WHERE stock > 0 ORDER BY price ASC, id ASC LIMIT ?`
+	query := `SELECT * FROM chair ORDER BY price ASC, id ASC LIMIT ?`
 	err := db.Select(&chairs, query, Limit)
 	if err != nil {
 		if err == sql.ErrNoRows {

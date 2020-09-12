@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -979,13 +978,6 @@ func searchEstateNazotte(c echo.Context) error {
 	if err := eg.Wait(); err != nil {
 		return c.NoContent(http.StatusInternalServerError)
 	}
-
-	sort.Slice(estatesInPolygon, func(i, j int) bool {
-		if estatesInPolygon[i].Popularity == estatesInPolygon[j].Popularity {
-			return estatesInPolygon[i].ID < estatesInPolygon[j].ID
-		}
-		return estatesInPolygon[i].Popularity > estatesInPolygon[j].Popularity
-	})
 
 	var re EstateSearchResponse
 	re.Estates = []Estate{}

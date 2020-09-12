@@ -291,6 +291,10 @@ func main() {
 					log.Errorf("failed to commit tx: %v", err)
 					return
 				}
+
+				for _, r := range records {
+					estateCashe.Store(r.ID, r)
+				}
 			}()
 		}
 	}()
@@ -782,11 +786,6 @@ func postEstate(c echo.Context) error {
 		}
 		estates = append(estates, estate)
 	}
-
-	for _, e := range estates {
-		estateCashe.Store(e.ID, e)
-	}
-
 	recordsChan <- estates
 
 	return c.NoContent(http.StatusCreated)

@@ -1,7 +1,7 @@
 deploy: build dist/env.sh db/*
 	rsync -a ./dist/isuumo /home/isucon/isuumo/webapp/go/isuumo
 	rsync -a ./dist/env.sh /home/isucon/env.sh
-	rsync -a /db/ /home/isucon/isuumo/webapp/mysql/db/
+	rsync -a ./db/ /home/isucon/isuumo/webapp/mysql/db/
 
 build: dist/isuumo
 

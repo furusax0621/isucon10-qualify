@@ -1,5 +1,5 @@
 deploy: build dist/env.sh
-	rsync -a ./dist/isuumo /home/isucon/isuumo/go/isuumo
+	rsync -a ./dist/isuumo /home/isucon/isuumo/webapp/go/isuumo
 	rsync -a ./dist/env.sh /home/isucon/env.sh
 
 build: dist/isuumo

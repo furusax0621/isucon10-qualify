@@ -30,6 +30,7 @@ var mySQLConnectionDataChair *MySQLConnectionEnv
 var chairSearchCondition ChairSearchCondition
 
 var estateCashe sync.Map
+var chairCashe sync.Map
 
 var estateDB *sqlx.DB
 var mySQLConnectionDataEstate *MySQLConnectionEnv
@@ -365,6 +366,11 @@ func getChairDetail(c echo.Context) error {
 		return c.NoContent(http.StatusBadRequest)
 	}
 
+	if chair, ok := chairCashe.Load(id); ok {
+		chair = chair.(Chair)
+		return c.JSON(http.StatusOK, chair)
+	}
+
 	chair := Chair{}
 	query := `SELECT * FROM chair WHERE id = ?`
 	err = chairDB.Get(&chair, query, id)
@@ -379,6 +385,8 @@ func getChairDetail(c echo.Context) error {
 		c.Echo().Logger.Infof("requested id's chair is sold out : %v", id)
 		return c.NoContent(http.StatusNotFound)
 	}
+
+	chairCashe.Store(id, chair)
 
 	return c.JSON(http.StatusOK, chair)
 }
@@ -612,6 +620,8 @@ func buyChair(c echo.Context) error {
 
 	stock := chair.Stock - 1
 	if stock > 0 {
+		chair.Stock = stock
+		chairCashe.Store(id, chair)
 		_, err = tx.Exec("UPDATE chair SET stock = ? WHERE id = ?", stock, id)
 		if err != nil {
 			c.Echo().Logger.Errorf("chair stock update failed : %v", err)
@@ -623,6 +633,7 @@ func buyChair(c echo.Context) error {
 			c.Echo().Logger.Errorf("chair delete failed : %v", err)
 			return c.NoContent(http.StatusInternalServerError)
 		}
+		chairCashe.Delete(id)
 	}
 
 	err = tx.Commit()

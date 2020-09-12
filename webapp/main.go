@@ -272,30 +272,28 @@ func main() {
 		for {
 			records := <-recordsChan
 
-			func() {
-				tx, err := estateDB.Begin()
+			tx, err := estateDB.Begin()
+			if err != nil {
+				log.Errorf("failed to begin tx: %v", err)
+				return
+			}
+			defer tx.Rollback()
+
+			for _, r := range records {
+				_, err := tx.Exec("INSERT INTO estate(id, name, description, thumbnail, address, latitude, longitude, rent, door_height, door_width, features, popularity) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", r.ID, r.Name, r.Description, r.Thumbnail, r.Address, r.Latitude, r.Longitude, r.Rent, r.DoorHeight, r.DoorWidth, r.Features, r.Popularity)
 				if err != nil {
-					log.Errorf("failed to begin tx: %v", err)
+					log.Errorf("failed to insert estate: %v", err)
 					return
 				}
-				defer tx.Rollback()
+			}
+			if err := tx.Commit(); err != nil {
+				log.Errorf("failed to commit tx: %v", err)
+				return
+			}
 
-				for _, r := range records {
-					_, err := tx.Exec("INSERT INTO estate(id, name, description, thumbnail, address, latitude, longitude, rent, door_height, door_width, features, popularity) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", r.ID, r.Name, r.Description, r.Thumbnail, r.Address, r.Latitude, r.Longitude, r.Rent, r.DoorHeight, r.DoorWidth, r.Features, r.Popularity)
-					if err != nil {
-						log.Errorf("failed to insert estate: %v", err)
-						return
-					}
-				}
-				if err := tx.Commit(); err != nil {
-					log.Errorf("failed to commit tx: %v", err)
-					return
-				}
-
-				for _, r := range records {
-					estateCashe.Store(r.ID, r)
-				}
-			}()
+			for _, r := range records {
+				estateCashe.Store(r.ID, r)
+			}
 		}
 	}()
 

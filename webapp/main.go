@@ -934,7 +934,7 @@ func searchEstateNazotte(c echo.Context) error {
 			if err == sql.ErrNoRows {
 				continue
 			} else {
-				c.Echo().Logger.Errorf("chairDB access is failed on executing validate if estate is in polygon : %v", err)
+				c.Echo().Logger.Errorf("estateDB access is failed on executing validate if estate is in polygon : %v", err)
 				return c.NoContent(http.StatusInternalServerError)
 			}
 		} else {

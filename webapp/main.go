@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
@@ -27,6 +28,8 @@ const NazotteLimit = 50
 var chairDB *sqlx.DB
 var mySQLConnectionDataChair *MySQLConnectionEnv
 var chairSearchCondition ChairSearchCondition
+
+var estateCashe sync.Map
 
 var estateDB *sqlx.DB
 var mySQLConnectionDataEstate *MySQLConnectionEnv
@@ -658,6 +661,11 @@ func getEstateDetail(c echo.Context) error {
 		return c.NoContent(http.StatusBadRequest)
 	}
 
+	if estate, ok := estateCashe.Load(id); ok {
+		estate = estate.(Estate)
+		return c.JSON(http.StatusOK, estate)
+	}
+
 	var estate Estate
 	err = estateDB.Get(&estate, "SELECT * FROM estate WHERE id = ?", id)
 	if err != nil {
@@ -668,6 +676,8 @@ func getEstateDetail(c echo.Context) error {
 		c.Echo().Logger.Errorf("Database Execution error : %v", err)
 		return c.NoContent(http.StatusInternalServerError)
 	}
+
+	estateCashe.Store(id, estate)
 
 	return c.JSON(http.StatusOK, estate)
 }

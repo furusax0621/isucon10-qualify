@@ -258,7 +258,7 @@ func init() {
 	json.Unmarshal(jsonText, &estateSearchCondition)
 }
 
-var recordsChan chan [][]string
+var recordsChan chan []Estate
 
 func main() {
 	// pprof
@@ -266,7 +266,8 @@ func main() {
 		fmt.Println(http.ListenAndServe("0.0.0.0:6060", nil))
 	}()
 
-	recordsChan := make(chan [][]string, 5)
+	recordsChan := make(chan []Estate, 5)
+	defer close(recordsChan)
 	go func() {
 		for {
 			records := <-recordsChan
@@ -278,25 +279,8 @@ func main() {
 			}
 			defer tx.Rollback()
 
-			for _, row := range records {
-				rm := RecordMapper{Record: row}
-				id := rm.NextInt()
-				name := rm.NextString()
-				description := rm.NextString()
-				thumbnail := rm.NextString()
-				address := rm.NextString()
-				latitude := rm.NextFloat()
-				longitude := rm.NextFloat()
-				rent := rm.NextInt()
-				doorHeight := rm.NextInt()
-				doorWidth := rm.NextInt()
-				features := rm.NextString()
-				popularity := rm.NextInt()
-				if err := rm.Err(); err != nil {
-					log.Errorf("failed to read record: %v", err)
-					return
-				}
-				_, err := tx.Exec("INSERT INTO estate(id, name, description, thumbnail, address, latitude, longitude, rent, door_height, door_width, features, popularity) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", id, name, description, thumbnail, address, latitude, longitude, rent, doorHeight, doorWidth, features, popularity)
+			for _, r := range records {
+				_, err := tx.Exec("INSERT INTO estate(id, name, description, thumbnail, address, latitude, longitude, rent, door_height, door_width, features, popularity) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", r.ID, r.Name, r.Description, r.Thumbnail, r.Address, r.Latitude, r.Longitude, r.Rent, r.DoorHeight, r.DoorWidth, r.Features, r.Popularity)
 				if err != nil {
 					log.Errorf("failed to insert estate: %v", err)
 					return
@@ -305,6 +289,10 @@ func main() {
 			if err := tx.Commit(); err != nil {
 				log.Errorf("failed to commit tx: %v", err)
 				return
+			}
+
+			for _, r := range records {
+				estateCashe.Store(r.ID, r)
 			}
 		}
 	}()
@@ -774,7 +762,29 @@ func postEstate(c echo.Context) error {
 	}
 
 	c.Logger().Debugf("post estate count: %d", len(records))
-	recordsChan <- records
+	estates := make([]Estate, 0, len(records))
+	for _, row := range records {
+		var estate Estate
+		rm := RecordMapper{Record: row}
+		estate.ID = int64(rm.NextInt())
+		estate.Name = rm.NextString()
+		estate.Description = rm.NextString()
+		estate.Thumbnail = rm.NextString()
+		estate.Address = rm.NextString()
+		estate.Latitude = rm.NextFloat()
+		estate.Longitude = rm.NextFloat()
+		estate.Rent = int64(rm.NextInt())
+		estate.DoorHeight = int64(rm.NextInt())
+		estate.DoorWidth = int64(rm.NextInt())
+		estate.Features = rm.NextString()
+		estate.Popularity = int64(rm.NextInt())
+		if err := rm.Err(); err != nil {
+			c.Logger().Errorf("failed to read record: %v", err)
+			return c.NoContent(http.StatusBadRequest)
+		}
+		estates = append(estates, estate)
+	}
+	recordsChan <- estates
 
 	return c.NoContent(http.StatusCreated)
 }

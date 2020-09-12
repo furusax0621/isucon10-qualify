@@ -367,7 +367,7 @@ func getChairDetail(c echo.Context) error {
 	}
 
 	if chair, ok := estateCashe.Load(id); ok {
-		chair = chair.(Estate)
+		chair = chair.(Chair)
 		return c.JSON(http.StatusOK, chair)
 	}
 

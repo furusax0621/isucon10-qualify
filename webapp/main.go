@@ -266,7 +266,7 @@ func main() {
 		fmt.Println(http.ListenAndServe("0.0.0.0:6060", nil))
 	}()
 
-	recordsChan := make(chan [][]string)
+	recordsChan := make(chan [][]string, 5)
 	go func() {
 		for {
 			records := <-recordsChan

@@ -947,7 +947,7 @@ func searchEstateNazotte(c echo.Context) error {
 	}
 
 	estatesInPolygon := []Estate{}
-	ch := make(chan struct{}, 100)
+	ch := make(chan struct{}, 25)
 	var eg errgroup.Group
 	for _, estate := range estatesInBoundingBox {
 		estate := estate

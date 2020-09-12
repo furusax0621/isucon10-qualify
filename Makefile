@@ -1,7 +1,8 @@
-deploy: build dist/env.sh db/*
+deploy: build dist/env.sh db/* json/*
 	rsync -a ./dist/isuumo /home/isucon/isuumo/webapp/go/isuumo
 	rsync -a ./dist/env.sh /home/isucon/env.sh
 	rsync -a ./db/ /home/isucon/isuumo/webapp/mysql/db/
+	rsync -a ./json/ /home/isucon/isuumo/webapp/fixture/
 	sudo systemctl restart isuumo.go.service
 
 build: dist/isuumo

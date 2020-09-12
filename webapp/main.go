@@ -1022,7 +1022,7 @@ func (cs Coordinates) getBoundingBox() BoundingBox {
 func (cs Coordinates) coordinatesToText() string {
 	points := make([]string, 0, len(cs.Coordinates))
 	for _, c := range cs.Coordinates {
-		points = append(points, strconv.FormatFloat(c.Latitude, 'f', -1, 64)+strconv.FormatFloat(c.Latitude, 'f', -1, 64))
+		points = append(points, strconv.FormatFloat(c.Latitude, 'f', -1, 64)+" "+strconv.FormatFloat(c.Longitude, 'f', -1, 64))
 	}
 	return fmt.Sprintf("'POLYGON((%s))'", strings.Join(points, ","))
 }
